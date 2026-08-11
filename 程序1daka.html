@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>打卡积分日历</title>
+
+  <!-- ========== PWA 配置 ========== -->
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; padding: 16px; max-width: 520px; margin: auto; color: #1e293b; }
+    h2 { font-size: 1.2em; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .card { background: white; border-radius: 20px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .flex-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .goal-setting { display: flex; align-items: center; gap: 6px; }
+    input, select, textarea { padding: 8px 12px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 0.95em; background: #f8fafc; width: auto; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+    button { padding: 8px 16px; border-radius: 10px; border: none; cursor: pointer; font-weight: 600; font-size: 0.9em; transition: all 0.2s; }
+    .btn-primary { background: #4f46e5; color: white; }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-secondary { background: #e2e8f0; color: #334155; }
+    .btn-secondary:hover { background: #cbd5e1; }
+    .btn-danger { background: #fecaca; color: #b91c1c; }
+    .btn-danger:hover { background: #fca5a5; }
+    .btn-sm { padding: 4px 10px; font-size: 0.8em; }
+    .year-selector { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; text-align: center; }
+    .day-header { font-size: 0.8em; color: #64748b; padding: 8px 0; font-weight: 600; }
+    .day-cell { padding: 8px 4px; border-radius: 10px; cursor: pointer; font-size: 0.9em; position: relative; transition: 0.15s; min-height: 52px; }
+    .day-cell:hover { background: #f1f5f9; }
+    .day-cell.today { font-weight: bold; border: 2px solid #4f46e5; }
+    .day-cell.reached { background: #dcfce7; }
+    .day-cell.not-reached { background: #fee2e2; }
+    .day-cell.selected { box-shadow: 0 0 0 2px #4f46e5, 0 0 0 4px rgba(79,70,229,0.2); }
+    .day-cell span.score { display: block; font-size: 0.7em; margin-top: 2px; color: #475569; }
+    .task-list { list-style: none; }
+    .task-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
+    .task-item:last-child { border-bottom: none; }
+    .task-checkbox { transform: scale(1.2); margin-top: 2px; accent-color: #4f46e5; }
+    .task-info { flex: 1; }
+    .task-name { font-weight: 600; }
+    .task-meta { font-size: 0.8em; color: #64748b; margin-top: 2px; }
+    .task-note { font-style: italic; background: #f8fafc; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; }
+    .score-badge { background: #eef2ff; padding: 2px 8px; border-radius: 20px; font-size: 0.8em; color: #4f46e5; white-space: nowrap; }
+    .total-score { font-size: 2em; font-weight: bold; }
+    .badge { padding: 4px 12px; border-radius: 20px; font-size: 0.85em; font-weight: 600; }
+    .badge-success { background: #dcfce7; color: #166534; }
+    .badge-fail { background: #fee2e2; color: #991b1b; }
+    .event-form { background: #f8fafc; border-radius: 12px; padding: 12px; margin-top: 12px; }
+    .event-form input, .event-form textarea { width: 100%; margin-bottom: 8px; }
+    .event-form textarea { resize: vertical; min-height: 50px; }
+    .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .summary-text { font-size: 0.9em; color: #475569; }
+    hr { border: 0.5px solid #e2e8f0; margin: 12px 0; }
+    .record-row { cursor: pointer; padding: 8px; border-radius: 8px; margin: 4px 0; background: #f8fafc; }
+    .record-row:hover { background: #eef2ff; }
+    .record-detail { padding-left: 16px; font-size: 0.9em; color: #334155; }
+    .backup-btns { display: flex; gap: 8px; }
+    @media (max-width: 400px) {
+      .day-cell { padding: 6px 2px; font-size: 0.8em; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 达标分设置 -->
+  <div class="card">
+    <div class="flex-row">
+      <h2>🎯 每日达标分</h2>
+      <div class="goal-setting">
+        <input type="number" id="goalInput" value="60" min="0" step="5" style="width:80px;" onchange="updateGoal()">
+        <span>分</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 日历区 -->
+  <div class="card">
+    <div class="year-selector">
+      <select id="yearSelect" onchange="renderCalendar()"></select>
+      <span>年</span>
+      <select id="monthSelect" onchange="renderCalendar()">
+        <option value="0">1月</option><option value="1">2月</option><option value="2">3月</option>
+        <option value="3">4月</option><option value="4">5月</option><option value="5">6月</option>
+        <option value="6">7月</option><option value="7">8月</option><option value="8">9月</option>
+        <option value="9">10月</option><option value="10">11月</option><option value="11">12月</option>
+      </select>
+      <button class="btn-secondary btn-sm" onclick="goToToday()">📅 今天</button>
+    </div>
+    <div class="calendar-grid" id="calendarDays">
+      <div class="day-header">日</div><div class="day-header">一</div><div class="day-header">二</div>
+      <div class="day-header">三</div><div class="day-header">四</div><div class="day-header">五</div>
+      <div class="day-header">六</div>
+    </div>
+    <div style="margin-top: 8px; font-size: 0.8em; color: #64748b; text-align: center;" id="selectedDateDisplay"></div>
+  </div>
+
+  <!-- 打卡详情 & 事件列表 -->
+  <div class="card" id="checkCard">
+    <div class="flex-row">
+      <h2>✅ 今日打卡</h2>
+      <div>
+        <span class="badge" id="statusBadge"></span>
+      </div>
+    </div>
+    <div class="flex-row" style="margin: 8px 0;">
+      <span class="summary-text" id="dateTitle"></span>
+      <span class="total-score" id="totalScoreDisplay">0</span>
+    </div>
+    <ul class="task-list" id="taskChecklist"></ul>
+    <div id="emptyHint" style="text-align:center; color:#94a3b8; padding:20px;">还没有添加任何事件，请先创建事件库</div>
+  </div>
+
+  <!-- 事件库管理 -->
+  <div class="card">
+    <div class="flex-row">
+      <h2>📋 事件库</h2>
+      <button class="btn-primary btn-sm" onclick="showAddForm()">＋ 添加事件</button>
+    </div>
+    <ul class="task-list" id="eventLibraryList"></ul>
+    <!-- 添加/编辑表单 (默认隐藏) -->
+    <div class="event-form" id="eventForm" style="display:none;">
+      <input type="text" id="eventName" placeholder="事件名称，如：运动">
+      <input type="number" id="eventDuration" placeholder="时长（分钟）" min="0">
+      <input type="number" id="eventScore" placeholder="积分" min="1">
+      <textarea id="eventNote" placeholder="备注（可选）"></textarea>
+      <input type="hidden" id="editEventId">
+      <div class="form-actions">
+        <button class="btn-secondary btn-sm" onclick="hideEventForm()">取消</button>
+        <button class="btn-primary btn-sm" onclick="saveEvent()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史打卡记录 -->
+  <div class="card">
+    <h2>📊 打卡记录</h2>
+    <div id="historyList" style="max-height: 300px; overflow-y: auto;">
+      <p style="color:#94a3b8; text-align:center;">暂无打卡记录</p>
+    </div>
+  </div>
+
+  <!-- 数据备份 -->
+  <div class="card">
+    <h2>💾 数据备份</h2>
+    <div class="backup-btns">
+      <button class="btn-primary btn-sm" onclick="exportData()">📤 导出备份</button>
+      <button class="btn-secondary btn-sm" onclick="document.getElementById('importFile').click()">📥 导入备份</button>
+      <input type="file" id="importFile" accept=".json" style="display:none;" onchange="importData(event)">
+    </div>
+    <p style="font-size:0.8em; color:#64748b; margin-top:8px;">导出的文件可保存到云盘，恢复时导入即可。</p>
+  </div>
+
+  <!-- ========== PWA 注册 ========== -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js')
+          .then(reg => console.log('Service Worker 注册成功', reg))
+          .catch(err => console.log('Service Worker 注册失败', err));
+      });
+    }
+  </script>
+
+  <!-- ========== 主逻辑 ========== -->
+  <script>
+    // ==================== 数据管理 ====================
+    const STORAGE_TASKS = 'daka_tasks';
+    const STORAGE_RECORDS = 'daka_records';
+    const STORAGE_SETTINGS = 'daka_settings';
+    const YEAR_RANGE = [2026, 2027, 2028, 2029, 2030];
+
+    const defaultTasks = [
+      { id: 1, name: '运动', duration: 30, score: 20, note: '跑步或跳绳' },
+      { id: 2, name: '阅读', duration: 45, score: 15, note: '专业书籍' },
+      { id: 3, name: '冥想', duration: 10, score: 10, note: '' }
+    ];
+
+    function loadTasks() {
+      const stored = localStorage.getItem(STORAGE_TASKS);
+      return stored ? JSON.parse(stored) : defaultTasks;
+    }
+    function saveTasks(tasks) {
+      localStorage.setItem(STORAGE_TASKS, JSON.stringify(tasks));
+    }
+    function loadRecords() {
+      const stored = localStorage.getItem(STORAGE_RECORDS);
+      return stored ? JSON.parse(stored) : {};
+    }
+    function saveRecords(records) {
+      localStorage.setItem(STORAGE_RECORDS, JSON.stringify(records));
+    }
+    function loadSettings() {
+      const stored = localStorage.getItem(STORAGE_SETTINGS);
+      return stored ? JSON.parse(stored) : { dailyGoal: 60 };
+    }
+    function saveSettings(settings) {
+      localStorage.setItem(STORAGE_SETTINGS, JSON.stringify(settings));
+    }
+
+    let tasks = loadTasks();
+    let records = loadRecords();
+    let settings = loadSettings();
+
+    let selectedDate = getTodayStr();
+    let displayYear = new Date().getFullYear();
+    let displayMonth = new Date().getMonth();
+
+    function getTodayStr() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function formatDateStr(y, m, d) {
+      return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    }
+
+    // ==================== UI 初始化 ====================
+    function init() {
+      const yearSelect = document.getElementById('yearSelect');
+      yearSelect.innerHTML = '';
+      if (!YEAR_RANGE.includes(displayYear)) displayYear = YEAR_RANGE[0];
+      YEAR_RANGE.forEach(y => {
+        const opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y + '年';
+        if (y === displayYear) opt.selected = true;
+        yearSelect.appendChild(opt);
+      });
+      document.getElementById('monthSelect').value = displayMonth;
+      document.getElementById('goalInput').value = settings.dailyGoal;
+      renderCalendar();
+      renderCheckPanel();
+      renderEventLibrary();
+      renderHistory();
+    }
+
+    // ==================== 日历渲染 ====================
+    function renderCalendar() {
+      displayYear = parseInt(document.getElementById('yearSelect').value);
+      displayMonth = parseInt(document.getElementById('monthSelect').value);
+      
+      const daysContainer = document.getElementById('calendarDays');
+      const headers = daysContainer.querySelectorAll('.day-header');
+      daysContainer.innerHTML = '';
+      headers.forEach(h => daysContainer.appendChild(h));
+
+      const firstDay = new Date(displayYear, displayMonth, 1).getDay();
+      const daysInMonth = new Date(displayYear, displayMonth+1, 0).getDate();
+
+      for (let i = 0; i < firstDay; i++) {
+        const empty = document.createElement('div');
+        empty.className = 'day-cell';
+        daysContainer.appendChild(empty);
+      }
+
+      const todayStr = getTodayStr();
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = formatDateStr(displayYear, displayMonth, d);
+        const cell = document.createElement('div');
+        cell.className = 'day-cell';
+        cell.textContent = d;
+        cell.dataset.date = dateStr;
+
+        if (dateStr === todayStr) {
+          cell.classList.add('today');
+        }
+
+        const dayRecord = records[dateStr];
+        let dayScore = 0;
+        if (dayRecord && dayRecord.length > 0) {
+          dayRecord.forEach(taskId => {
+            const task = tasks.find(t => t.id === taskId);
+            if (task) dayScore += task.score;
+          });
+        }
+        if (dayRecord && dayRecord.length > 0) {
+          if (dayScore >= settings.dailyGoal) {
+            cell.classList.add('reached');
+          } else {
+            cell.classList.add('not-reached');
+          }
+          const scoreSpan = document.createElement('span');
+          scoreSpan.className = 'score';
+          scoreSpan.textContent = dayScore + '分';
+          cell.appendChild(scoreSpan);
+        }
+
+        if (dateStr === selectedDate) {
+          cell.classList.add('selected');
+        }
+
+        cell.addEventListener('click', () => {
+          selectedDate = dateStr;
+          renderCalendar();
+          renderCheckPanel();
+        });
+
+        daysContainer.appendChild(cell);
+      }
+
+      document.getElementById('selectedDateDisplay').textContent = 
+        `已选：${displayYear}年${displayMonth+1}月`;
+    }
+
+    function goToToday() {
+      displayYear = new Date().getFullYear();
+      displayMonth = new Date().getMonth();
+      if (!YEAR_RANGE.includes(displayYear)) displayYear = YEAR_RANGE[0];
+      document.getElementById('yearSelect').value = displayYear;
+      document.getElementById('monthSelect').value = displayMonth;
+      selectedDate = getTodayStr();
+      renderCalendar();
+      renderCheckPanel();
+    }
+
+    // ==================== 打卡面板 ====================
+    function renderCheckPanel() {
+      const dateTitle = document.getElementById('dateTitle');
+      dateTitle.textContent = selectedDate;
+      const totalDisplay = document.getElementById('totalScoreDisplay');
+      const statusBadge = document.getElementById('statusBadge');
+      const checklist = document.getElementById('taskChecklist');
+      const emptyHint = document.getElementById('emptyHint');
+
+      if (tasks.length === 0) {
+        emptyHint.style.display = 'block';
+        checklist.innerHTML = '';
+        totalDisplay.textContent = '0';
+        statusBadge.textContent = '无事件';
+        statusBadge.className = 'badge badge-fail';
+        return;
+      }
+      emptyHint.style.display = 'none';
+
+      const dayRecord = records[selectedDate] || [];
+      let totalScore = 0;
+
+      checklist.innerHTML = '';
+      tasks.forEach(task => {
+        const done = dayRecord.includes(task.id);
+        if (done) totalScore += task.score;
+
+        const li = document.createElement('li');
+        li.className = 'task-item';
+        li.innerHTML = `
+          <input type="checkbox" class="task-checkbox" data-task-id="${task.id}" ${done ? 'checked' : ''}>
+          <div class="task-info">
+            <div class="task-name">${task.name} <span class="score-badge">+${task.score}分</span></div>
+            <div class="task-meta">
+              ⏱️ ${task.duration}分钟
+              ${task.note ? `<span class="task-note">📝 ${task.note}</span>` : ''}
+            </div>
+          </div>
+        `;
+        checklist.appendChild(li);
+      });
+
+      document.querySelectorAll('.task-checkbox').forEach(cb => {
+        cb.addEventListener('change', function() {
+          const taskId = parseInt(this.dataset.taskId);
+          toggleTaskCompletion(selectedDate, taskId, this.checked);
+        });
+      });
+
+      totalDisplay.textContent = totalScore;
+      if (dayRecord.length === 0) {
+        statusBadge.textContent = '未打卡';
+        statusBadge.className = 'badge badge-fail';
+      } else if (totalScore >= settings.dailyGoal) {
+        statusBadge.textContent = '已达标 🎉';
+        statusBadge.className = 'badge badge-success';
+      } else {
+        statusBadge.textContent = `未达标 (差${settings.dailyGoal - totalScore}分)`;
+        statusBadge.className = 'badge badge-fail';
+      }
+    }
+
+    function toggleTaskCompletion(dateStr, taskId, isChecked) {
+      if (!records[dateStr]) {
+        records[dateStr] = [];
+      }
+      const dayRecord = records[dateStr];
+      if (isChecked) {
+        if (!dayRecord.includes(taskId)) dayRecord.push(taskId);
+      } else {
+        const idx = dayRecord.indexOf(taskId);
+        if (idx > -1) dayRecord.splice(idx, 1);
+      }
+      if (dayRecord.length === 0) {
+        delete records[dateStr];
+      }
+      saveRecords(records);
+      renderCalendar();
+      renderCheckPanel();
+      renderHistory();
+    }
+
+    // ==================== 达标分设置 ====================
+    function updateGoal() {
+      const input = document.getElementById('goalInput');
+      let val = parseInt(input.value);
+      if (isNaN(val) || val < 0) val = 0;
+      input.value = val;
+      settings.dailyGoal = val;
+      saveSettings(settings);
+      renderCalendar();
+      renderCheckPanel();
+      renderHistory();
+    }
+
+    // ==================== 事件库管理 ====================
+    function renderEventLibrary() {
+      const list = document.getElementById('eventLibraryList');
+      if (tasks.length === 0) {
+        list.innerHTML = '<li style="text-align:center; color:#94a3b8; padding:12px;">暂无事件，请添加</li>';
+        return;
+      }
+      list.innerHTML = '';
+      tasks.forEach(task => {
+        const li = document.createElement('li');
+        li.className = 'task-item';
+        li.innerHTML = `
+          <div class="task-info">
+            <div class="task-name">${task.name} <span class="score-badge">+${task.score}分</span></div>
+            <div class="task-meta">
+              ⏱️ ${task.duration}分钟
+              ${task.note ? `<span class="task-note">📝 ${task.note}</span>` : ''}
+            </div>
+          </div>
+          <div>
+            <button class="btn-secondary btn-sm" onclick="editTask(${task.id})">编辑</button>
+            <button class="btn-danger btn-sm" onclick="deleteTask(${task.id})">删除</button>
+          </div>
+        `;
+        list.appendChild(li);
+      });
+    }
+
+    function showAddForm() {
+      document.getElementById('eventForm').style.display = 'block';
+      document.getElementById('eventName').value = '';
+      document.getElementById('eventDuration').value = '';
+      document.getElementById('eventScore').value = '';
+      document.getElementById('eventNote').value = '';
+      document.getElementById('editEventId').value = '';
+    }
+
+    function hideEventForm() {
+      document.getElementById('eventForm').style.display = 'none';
+    }
+
+    function editTask(id) {
+      const task = tasks.find(t => t.id === id);
+      if (!task) return;
+      document.getElementById('eventForm').style.display = 'block';
+      document.getElementById('eventName').value = task.name;
+      document.getElementById('eventDuration').value = task.duration;
+      document.getElementById('eventScore').value = task.score;
+      document.getElementById('eventNote').value = task.note || '';
+      document.getElementById('editEventId').value = id;
+    }
+
+    function saveEvent() {
+      const name = document.getElementById('eventName').value.trim();
+      const duration = parseInt(document.getElementById('eventDuration').value);
+      const score = parseInt(document.getElementById('eventScore').value);
+      const note = document.getElementById('eventNote').value.trim();
+      const editId = document.getElementById('editEventId').value;
+
+      if (!name || isNaN(duration) || duration < 0 || isNaN(score) || score < 1) {
+        alert('请完整填写：事件名称、有效时长(≥0)和积分(≥1)');
+        return;
+      }
+
+      if (editId) {
+        const task = tasks.find(t => t.id === parseInt(editId));
+        if (task) {
+          task.name = name;
+          task.duration = duration;
+          task.score = score;
+          task.note = note;
+        }
+      } else {
+        const maxId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) : 0;
+        tasks.push({
+          id: maxId + 1,
+          name,
+          duration,
+          score,
+          note
+        });
+      }
+
+      saveTasks(tasks);
+      hideEventForm();
+      renderEventLibrary();
+      renderCheckPanel();
+      renderCalendar();
+    }
+
+    function deleteTask(id) {
+      if (!confirm('确定删除该事件吗？已有的打卡记录将保留，但不再计算积分。')) return;
+      tasks = tasks.filter(t => t.id !== id);
+      saveTasks(tasks);
+      renderEventLibrary();
+      renderCheckPanel();
+      renderCalendar();
+      renderHistory();
+    }
+
+    // ==================== 打卡记录历史 ====================
+    function renderHistory() {
+      const container = document.getElementById('historyList');
+      const allDates = Object.keys(records).sort().reverse();
+      if (allDates.length === 0) {
+        container.innerHTML = '<p style="color:#94a3b8; text-align:center;">暂无打卡记录</p>';
+        return;
+      }
+
+      let html = '';
+      allDates.forEach(dateStr => {
+        const dayRecord = records[dateStr];
+        let dayScore = 0;
+        const completedNames = [];
+        dayRecord.forEach(taskId => {
+          const task = tasks.find(t => t.id === taskId);
+          if (task) {
+            dayScore += task.score;
+            completedNames.push(task.name);
+          }
+        });
+        const isReached = dayScore >= settings.dailyGoal;
+        html += `
+          <div class="record-row" onclick="toggleRecordDetail('${dateStr}')">
+            <strong>${dateStr}</strong> 
+            <span class="badge ${isReached ? 'badge-success' : 'badge-fail'}">${dayScore}分 ${isReached ? '达标' : '未达标'}</span>
+            <div class="record-detail" id="detail-${dateStr}" style="display:none; margin-top:4px;">
+              完成：${completedNames.join('、') || '无'} | 总分：${dayScore}
+            </div>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+    }
+
+    function toggleRecordDetail(dateStr) {
+      const detail = document.getElementById('detail-' + dateStr);
+      if (detail) {
+        detail.style.display = detail.style.display === 'none' ? 'block' : 'none';
+      }
+    }
+
+    // ==================== 数据导入导出 ====================
+    function exportData() {
+      const data = {
+        tasks: tasks,
+        records: records,
+        settings: settings,
+        exportDate: new Date().toISOString()
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `打卡积分备份_${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importData(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data.tasks || !data.records || !data.settings) {
+            throw new Error('备份文件格式不正确');
+          }
+          if (confirm('导入将覆盖当前所有数据，确定继续吗？')) {
+            tasks = data.tasks;
+            records = data.records;
+            settings = data.settings;
+            saveTasks(tasks);
+            saveRecords(records);
+            saveSettings(settings);
+            document.getElementById('goalInput').value = settings.dailyGoal;
+            renderCalendar();
+            renderCheckPanel();
+            renderEventLibrary();
+            renderHistory();
+            alert('导入成功！');
+          }
+        } catch (err) {
+          alert('导入失败：文件内容无效');
+        }
+      };
+      reader.readAsText(file);
+      event.target.value = '';
+    }
+
+    // ==================== 启动 ====================
+    init();
+  </script>
+</body>
+</html>
